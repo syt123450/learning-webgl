@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Draw simple 2D Square using WebGL</title>
+
+    <script src="../../lib/jquery.min.js"></script>
+    <script src="../../lib/gl-matrix.js"></script>
+
+    <style>
+
+        #container {
+
+            width: 500px;
+            height: 500px;
+
+        }
+
+    </style>
+
+</head>
+<body>
+
+<canvas id="container"></canvas>
+
+<script id="vertexShader" type="x-shader/x-vertex">
+
+    attribute vec3 vertexPos;
+
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+
+    void main(void) {
+
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(vertexPos, 1.0);
+    }
+
+</script>
+
+<script id="fragmentShader" type="x-shader/x-fragment">
+
+    void main(void) {
+
+        gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    }
+
+</script>
+
+<script>
+
+	var container = document.getElementById("container");
+
+	var fragmentShaderCode = document.getElementById("fragmentShader").textContent;
+	var vertexShaderCode = document.getElementById("vertexShader").textContent;
+
+	function initWebGL (container) {
+
+		var gl = null;
+		var msg = "The browser does not support WebGL or it is not enabled.";
+
+		try {
+			// gl对象是一一对应于特定的某个canvas
+			gl = container.getContext("experimental-webgl");
+		} catch (e) {
+			msg = "Error catch " + e.toString();
+		}
+
+		if (!gl) {
+			alert(msg);
+			throw new Error(msg);
+		}
+
+		return gl;
+	}
+
+	function initViewport (gl, container) {
+		// viewport起点加上起点长宽的偏移
+		gl.viewport(0, 0, container.width, container.height);
+	}
+
+	function createSquare (gl) {
+		var vertexBuffer;
+		vertexBuffer = gl.createBuffer();
+
+		// 我觉得这里的意思是吧这个对象先绑在gl.ARRAY_BUFFER上，改变gl.ARRAY_BUFFER就可以改变这个对象
+        // 就是有另一个对象绑到gl.ARRAY_BUFFER上，应该这个vertexBuffer就和gl.ARRAY_BUFFER无关了
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+		var verts = [
+			.6, .8, 0.0,
+			-.5, .5, 0.0,
+			.5, -.5, 0.0,
+			-.5, -.5, 0.0
+		];
+
+		// 这里把一个Float32Array数据传到gl.ARRAY_BUFFER，gl.ARRAY_BUFFER自动把数据传到vertexBuffer中
+
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+		var square = {
+			buffer: vertexBuffer,
+			vertSize: 3,
+			nVerts: 4,
+			primtype: gl.TRIANGLE_STRIP
+		};
+
+		return square;
+	}
+
+	var projectionMatrix, modelViewMatrix;
+
+	// 这里使用gl-matrix库生成projectionMatrix和modelViewMatrix,不过具体这个库在做什么，原理还不是特别清楚
+
+	function initMatrices(container) {
+
+		modelViewMatrix = mat4.create();
+		mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -3.333]);
+
+		projectionMatrix = mat4.create();
+		mat4.perspective(projectionMatrix, Math.PI / 4, container.width / container.height, 1, 10000);
+
+    }
+
+    function createShader(gl, str, type) {
+
+		var shader;
+
+		// 不同的createShader参数会创建出不同的对象
+
+		if (type === "fragment") {
+			shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (type === "vertex") {
+			shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+			return null;
+        }
+
+        // 把具体的shader text关联到这个shader上
+
+        gl.shaderSource(shader, str);
+
+		// 应该是告诉shader把关联的text代码转换成可执行程序吧
+
+		gl.compileShader(shader);
+
+		// 这里是一种检测方法
+
+		if(!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+
+			// 不太清除这里的infolog中包含了什么具体信息
+
+			alert(gl.getShaderInfoLog(shader));
+			return null;
+        }
+
+        return shader;
+
+    }
+
+    var shaderProgram,
+        shaderVertexPositionAttribute,
+        shaderProjectMatrixUniform,
+        shaderModelViewMatrixUniform;
+
+    function initShader(gl) {
+		var fragmentShader = createShader(gl, fragmentShaderCode, "fragment");
+		var vertexShader = createShader(gl, vertexShaderCode, "vertex");
+
+		// 创建一个webgl程序
+
+		shaderProgram = gl.createProgram();
+
+		// 将vertexShader和fragmentShader关联到webgl程序
+
+		gl.attachShader(shaderProgram, vertexShader);
+		gl.attachShader(shaderProgram, fragmentShader);
+
+		// 在webgl程序内部建立和shader的连接
+
+		gl.linkProgram(shaderProgram);
+
+		// 获取程序中的顶点指针
+
+		shaderVertexPositionAttribute = gl.getAttribLocation(shaderProgram, "vertexPos");
+
+		// 不是很清楚这个为什么要enable？感觉就是从程序中取了出来？
+
+		gl.enableVertexAttribArray(shaderVertexPositionAttribute);
+
+		// 取出程序中的两个变量，之后可以用来和外部的变量绑定
+
+		shaderProjectMatrixUniform = gl.getUniformLocation(shaderProgram, "projectionMatrix");
+		shaderModelViewMatrixUniform = gl.getUniformLocation(shaderProgram, "modelViewMatrix");
+
+		if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+			alert("Could not initialize shader.");
+        }
+    }
+
+    function draw(gl, obj) {
+
+    	gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    	gl.clear(gl.COLOR_BUFFER_BIT);
+
+    	gl.bindBuffer(gl.ARRAY_BUFFER, obj.buffer);
+
+    	gl.useProgram(shaderProgram);
+
+    	// 绑定变量
+
+    	gl.vertexAttribPointer(shaderVertexPositionAttribute,
+            obj.vertSize, gl.FLOAT, false, 0, 0);
+    	gl.uniformMatrix4fv(shaderProjectMatrixUniform, false, projectionMatrix);
+    	gl.uniformMatrix4fv(shaderModelViewMatrixUniform, false, modelViewMatrix);
+
+    	gl.drawArrays(obj.primtype, 0, obj.nVerts);
+    }
+
+	$(function() {
+		var gl = initWebGL(container);
+		initViewport(gl, container);
+		initMatrices(container);
+		var square = createSquare(gl);
+		initShader(gl);
+		draw(gl, square);
+    });
+
+</script>
+
+</body>
+</html>
